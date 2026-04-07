@@ -108,13 +108,13 @@ else:
         pos = st.radio("Posição do Jogador", ["Baseline", "Rede"], horizontal=True)
         
         if st.button("CONFIRMAR E REGISTRAR PONTO", use_container_width=True, type="primary"):
-            # Lógica de atualização de placar interno
+            # Atualização de placar
             if winner_pt == p1: 
                 st.session_state.score["p1_points"] += 1
             else: 
                 st.session_state.score["p2_points"] += 1
             
-            # Registro na Base de Dados
+            # Registro na Base
             st.session_state.match_data.append({
                 "Vencedor": winner_pt, 
                 "Saque": st.session_state.last_serve, 
@@ -125,12 +125,22 @@ else:
                 "Posição": pos
             })
             
-            # Retorno ao Saque
             st.session_state.step = "Service"
             st.rerun()
 
     st.divider()
     
-    # RODAPÉ DE GESTÃO
+    # RODAPÉ DE GESTÃO (BLOCO CORRIGIDO)
     col_f1, col_f2 = st.columns(2)
     with col_f1:
+        if st.button("🔄 DESFAZER ÚLTIMO PONTO"):
+            if st.session_state.match_data:
+                st.session_state.match_data.pop()
+                st.rerun()
+    with col_f2:
+        if st.button("📥 EXPORTAR CSV (SCOUT)"):
+            if st.session_state.match_data:
+                df = pd.DataFrame(st.session_state.match_data)
+                st.download_button("Baixar Dados", df.to_csv(index=False), "scout-report.csv", "text/csv")
+            else:
+                st.warning("Sem dados.")
