@@ -52,130 +52,104 @@ if 'temp_data' not in st.session_state:
 def format_pts(p):
     return {0: "0", 1: "15", 2: "30", 3: "40", 4: "AD"}.get(p, "40")
 
-# --- 1. SETUP DA PARTIDA ---
+def register_point(winner, res, cat="Winner", golpe="Saque", dir_g="N/A", pos="N/A"):
+    # Atualiza Placar
+    if winner == st.session_state.setup['p1']: st.session_state.score["p1_pts"] += 1
+    else: st.session_state.score["p2_pts"] += 1
+    
+    # Grava na Base
+    sacador = st.session_state.setup['p1'] if st.session_state.setup['server'] == 1 else st.session_state.setup['p2']
+    st.session_state.match_data.append({
+        "Sacador": sacador, "Vencedor": winner, "Saque": f"{st.session_state.serve_num}º", 
+        "Dir_Saque": st.session_state.temp_data.get('dir', "N/A"), "Resultado": res,
+        "Categoria": cat, "Golpe": golpe, "Direcao": dir_g, "Posicao": pos
+    })
+    
+    # Reset Total de Ciclo
+    st.session_state.step = "SERVICE"
+    st.session_state.serve_num = 1
+    st.session_state.temp_data = {}
+
+# --- 1. SETUP ---
 if not st.session_state.setup["active"]:
     st.title("🎾 Scout-Tennis Pro")
-    with st.container(border=True):
-        col_a, col_b = st.columns(2)
-        p1 = col_a.text_input("Atleta/Dupla A", "Atleta 1")
-        p2 = col_b.text_input("Atleta/Dupla B", "Atleta 2")
-        fmt = st.selectbox("Formato", ["Melhor de 3 Sets", "Melhor de 5 Sets", "Set Único", "Pro-Set"])
+    with st.form("setup"):
+        p1 = st.text_input("Atleta A", "Atleta 1")
+        p2 = st.text_input("Atleta B", "Atleta 2")
         server_initial = st.radio("Quem inicia sacando?", [p1, p2], horizontal=True)
-        
-        if st.button("🚀 INICIAR PARTIDA", type="primary"):
+        if st.form_submit_button("INICIAR"):
             srv_idx = 1 if server_initial == p1 else 2
-            st.session_state.setup.update({"active": True, "p1": p1, "p2": p2, "fmt": fmt, "server": srv_idx})
+            st.session_state.setup.update({"active": True, "p1": p1, "p2": p2, "server": srv_idx})
             st.rerun()
 
-# --- 2. INTERFACE DE SCOUTING ---
+# --- 2. SCOUTING ---
 else:
     s = st.session_state.score
-    p1_n = st.session_state.setup['p1']
-    p2_n = st.session_state.setup['p2']
+    p1_n, p2_n = st.session_state.setup['p1'], st.session_state.setup['p2']
     srv_idx = st.session_state.setup['server']
     sacador_atual = p1_n if srv_idx == 1 else p2_n
     recebedor_atual = p2_n if srv_idx == 1 else p1_n
     
-    p1_srv = " 🎾" if srv_idx == 1 else ""
-    p2_srv = " 🎾" if srv_idx == 2 else ""
-    
     st.markdown(f"""
     <div class="main-score">
-        <div class="player-name">{p1_n}<span class="server-icon">{p1_srv}</span></div>
+        <div class="player-name">{p1_n}{" 🎾" if srv_idx == 1 else ""}</div>
         <div class="score-value">{s['p1_sets']} | {s['p1_gms']} ({format_pts(s['p1_pts'])})</div>
         <hr style="border: 0.5px solid #444; margin: 10px 0;">
-        <div class="player-name">{p2_n}<span class="server-icon">{p2_srv}</span></div>
+        <div class="player-name">{p2_n}{" 🎾" if srv_idx == 2 else ""}</div>
         <div class="score-value">{s['p2_sets']} | {s['p2_gms']} ({format_pts(s['p2_pts'])})</div>
     </div>
     """, unsafe_allow_html=True)
 
-    # --- FASE 1: SERVIÇO ---
+    # FASE 1: SERVIÇO
     if st.session_state.step == "SERVICE":
-        st.markdown(f"<div class='step-title'>Saque de: {sacador_atual} ({st.session_state.serve_num}º)</div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='step-title'>Saque: {sacador_atual} ({st.session_state.serve_num}º)</div>", unsafe_allow_html=True)
         c1, c2, c3 = st.columns(3)
-        if c1.button("WIDE ↙️"): 
-            st.session_state.temp_data['dir'] = "Wide"; st.session_state.step = "RESULT"; st.rerun()
-        if c2.button("BODY 👤"): 
-            st.session_state.temp_data['dir'] = "Body"; st.session_state.step = "RESULT"; st.rerun()
-        if c3.button("T ⬇️"): 
-            st.session_state.temp_data['dir'] = "T"; st.session_state.step = "RESULT"; st.rerun()
-        
-        if st.button("❌ FALTA / NET", type="secondary"):
-            if st.session_state.serve_num == 1:
-                st.session_state.serve_num = 2
-                st.rerun()
-            else:
-                # AUTOMATIZAÇÃO DUPLA FALTA: Ganha quem está recebendo
-                st.session_state.temp_data.update({'res': "Dupla Falta", 'cat': "Erro", 'winner': recebedor_atual})
-                st.session_state.step = "FINAL_CONFIRM"
-                st.rerun()
+        if c1.button("WIDE ↙️"): st.session_state.temp_data['dir'] = "Wide"; st.session_state.step = "RESULT"; st.rerun()
+        if c2.button("BODY 👤"): st.session_state.temp_data['dir'] = "Body"; st.session_state.step = "RESULT"; st.rerun()
+        if c3.button("T ⬇️"): st.session_state.temp_data['dir'] = "T"; st.session_state.step = "RESULT"; st.rerun()
+        if st.button("❌ FALTA / NET"):
+            if st.session_state.serve_num == 1: st.session_state.serve_num = 2; st.rerun()
+            else: register_point(recebedor_atual, "Dupla Falta", "Erro"); st.rerun()
 
-    # --- FASE 2: DESFECHO ---
+    # FASE 2: DESFECHO
     elif st.session_state.step == "RESULT":
         st.markdown("<div class='step-title'>Desfecho do Ponto</div>", unsafe_allow_html=True)
         cr1, cr2 = st.columns(2)
-        if cr1.button("🏆 WINNER (Rali)", type="primary"):
-            st.session_state.temp_data['res'] = "Winner"; st.session_state.temp_data['cat'] = "Winner"
-            st.session_state.step = "WINNER_PICK"; st.rerun()
-        if cr2.button("📉 ERRO (Rali)"):
+        if cr1.button("🏆 WINNER (Rali)", type="primary"): 
+            st.session_state.temp_data['res'] = "Winner"; st.session_state.temp_data['cat'] = "Winner"; st.session_state.step = "WINNER_PICK"; st.rerun()
+        if cr2.button("📉 ERRO (Rali)"): 
             st.session_state.temp_data['res'] = "Erro"; st.session_state.step = "ERR_CAT"; st.rerun()
         
         st.divider()
         cs1, cs2 = st.columns(2)
-        if cs1.button("🎯 ACE"):
-            # AUTOMATIZAÇÃO ACE: Ganha quem está sacando
-            st.session_state.temp_data.update({'res': "Ace", 'cat': "Winner", 'winner': sacador_atual})
-            st.session_state.step = "FINAL_CONFIRM"; st.rerun()
-        if cs2.button("🎾 SERVICE WINNER"):
-            # AUTOMATIZAÇÃO SERVICE WINNER: Ganha quem está sacando
-            st.session_state.temp_data.update({'res': "Service Winner", 'cat': "Winner", 'winner': sacador_atual})
-            st.session_state.step = "FINAL_CONFIRM"; st.rerun()
+        if cs1.button("🎯 ACE"): register_point(sacador_atual, "Ace"); st.rerun()
+        if cs2.button("🎾 SERVICE WINNER"): register_point(sacador_atual, "Service Winner"); st.rerun()
 
-    # --- FASE 3: QUALIFICAÇÃO DO ERRO ---
+    # FASE 3: TIPO DE ERRO
     elif st.session_state.step == "ERR_CAT":
         st.markdown("<div class='step-title'>Tipo de Erro</div>", unsafe_allow_html=True)
         ce1, ce2 = st.columns(2)
-        if ce1.button("🐢 NÃO FORÇADO"):
-            st.session_state.temp_data['cat'] = "Unforced"; st.session_state.step = "WINNER_PICK"; st.rerun()
-        if ce2.button("💥 FORÇADO"):
-            st.session_state.temp_data['cat'] = "Forced"; st.session_state.step = "WINNER_PICK"; st.rerun()
+        if ce1.button("🐢 NÃO FORÇADO"): st.session_state.temp_data['cat'] = "Unforced"; st.session_state.step = "WINNER_PICK"; st.rerun()
+        if ce2.button("💥 FORÇADO"): st.session_state.temp_data['cat'] = "Forced"; st.session_state.step = "WINNER_PICK"; st.rerun()
 
-    # --- FASE 4: VENCEDOR MANUAL (SÓ PARA RALI) ---
+    # FASE 4: TÁTICA (RALI)
     elif st.session_state.step == "WINNER_PICK":
-        st.markdown("<div class='step-title'>Detalhes Táticos</div>", unsafe_allow_html=True)
-        winner_manual = st.radio("Ponto para:", [p1_n, p2_n], horizontal=True)
-        col_g1, col_g2 = st.columns(2)
-        golpe = col_g1.selectbox("Golpe", ["Forehand 🎾", "Backhand 🎾", "Voleio 🧤", "Smash ⚡", "Drop Shot 💧"])
-        pos = col_g2.radio("Posição", ["Rede 🕸️"] if golpe == "Voleio 🧤" else ["Baseline 📏", "Rede 🕸️"])
-        dir_g = st.radio("Direção", ["Cruzada ⚔️", "Paralela 🛤️"], horizontal=True)
-
-        if st.button("✅ REGISTRAR PONTO", type="primary"):
-            st.session_state.temp_data.update({'winner': winner_manual, 'golpe': golpe, 'pos': pos, 'dir_g': dir_g})
-            st.session_state.step = "FINAL_CONFIRM"; st.rerun()
-
-    # --- FASE 5: CONFIRMAÇÃO FINAL E REGISTRO ---
-    elif st.session_state.step == "FINAL_CONFIRM":
-        w = st.session_state.temp_data['winner']
-        res = st.session_state.temp_data['res']
-        st.success(f"Ponto concluído: {res} para {w}")
-        
-        if st.button("🚀 CONFIRMAR E PRÓXIMO PONTO", type="primary"):
-            if w == p1_n: st.session_state.score["p1_pts"] += 1
-            else: st.session_state.score["p2_pts"] += 1
-            
-            st.session_state.match_data.append({
-                "Sacador": sacador_atual, "Vencedor": w, "Saque": f"{st.session_state.serve_num}º", 
-                "Dir_Saque": st.session_state.temp_data.get('dir'), "Resultado": res,
-                "Categoria": st.session_state.temp_data.get('cat'), "Golpe": st.session_state.temp_data.get('golpe', "Saque"),
-                "Direcao": st.session_state.temp_data.get('dir_g', "N/A"), "Posicao": st.session_state.temp_data.get('pos', "N/A")
-            })
-            st.session_state.step = "SERVICE"; st.session_state.serve_num = 1; st.session_state.temp_data = {}; st.rerun()
+        st.markdown("<div class='step-title'>Finalização</div>", unsafe_allow_html=True)
+        winner = st.radio("Vencedor:", [p1_n, p2_n], horizontal=True)
+        col1, col2 = st.columns(2)
+        golpe = col1.selectbox("Golpe", ["Forehand", "Backhand", "Voleio", "Smash", "Drop Shot"])
+        pos = col2.radio("Posição", ["Rede"] if golpe == "Voleio" else ["Baseline", "Rede"])
+        dir_g = st.radio("Direção", ["Cruzada", "Paralela"], horizontal=True)
+        if st.button("✅ REGISTRAR", type="primary"):
+            register_point(winner, st.session_state.temp_data['res'], st.session_state.temp_data['cat'], golpe, dir_g, pos)
+            st.rerun()
 
     st.divider()
     cf1, cf2 = st.columns(2)
-    with cf1:
-        if st.button("🔄 DESFAZER (UNDO)"):
-            if st.session_state.match_data: st.session_state.match_data.pop(); st.rerun()
-    with cf2:
-        if st.button("🎾 ALTERNAR SACADOR"):
-            st.session_state.setup['server'] = 2 if st.session_state.setup['server'] == 1 else 1; st.rerun()
+    if cf1.button("🔄 UNDO"):
+        if st.session_state.match_data: st.session_state.match_data.pop(); st.rerun()
+    if cf2.button("🎾 ALTERNAR SAQUE"):
+        st.session_state.setup['server'] = 2 if srv_idx == 1 else 1; st.rerun()
+    if st.button("📥 EXPORTAR CSV"):
+        df = pd.DataFrame(st.session_state.match_data)
+        st.download_button("Baixar", df.to_csv(index=False), "scout.csv", "text/csv")
