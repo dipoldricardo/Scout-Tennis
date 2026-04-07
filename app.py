@@ -4,7 +4,7 @@ import pandas as pd
 # Configuração de Página Nível ATP - Marco "The Precision" Valente
 st.set_page_config(page_title="Scout-Tennis | High Performance", layout="centered")
 
-# --- INICIALIZAÇÃO DE ESTADOS ---
+# --- INICIALIZAÇÃO DE ESTADOS (MEMÓRIA DO SISTEMA) ---
 if 'match_data' not in st.session_state:
     st.session_state.match_data = []
 if 'score' not in st.session_state:
@@ -17,6 +17,12 @@ if 'setup' not in st.session_state:
     st.session_state.setup = {"active": False, "p1_name": "", "p2_name": "", "format": ""}
 if 'step' not in st.session_state:
     st.session_state.step = "Service"
+if 'last_serve' not in st.session_state:
+    st.session_state.last_serve = ""
+if 'last_res' not in st.session_state:
+    st.session_state.last_res = ""
+if 'err_cat' not in st.session_state:
+    st.session_state.err_cat = ""
 
 def format_tennis_score(pts):
     labels = {0: "0", 1: "15", 2: "30", 3: "40", 4: "AD"}
@@ -39,68 +45,92 @@ else:
     p1 = st.session_state.setup["p1_name"]
     p2 = st.session_state.setup["p2_name"]
     
-    # Placar Visual
+    # Placar Visual de Alta Visibilidade
     st.markdown(f"""
     <div style="background-color: #0e1117; padding: 15px; border-radius: 10px; border: 1px solid #31333f; text-align: center;">
-        <h3 style="margin:0;">{p1}: {s['p1_sets']} sets | {s['p1_games']} ({format_tennis_score(s['p1_points'])})</h3>
-        <h3 style="margin:0;">{p2}: {s['p2_sets']} sets | {s['p2_games']} ({format_tennis_score(s['p2_points'])})</h3>
+        <h3 style="margin:0; color: #00ff00;">{p1}: {s['p1_sets']} sets | {s['p1_games']} ({format_tennis_score(s['p1_points'])})</h3>
+        <h3 style="margin:0; color: #00ff00;">{p2}: {s['p2_sets']} sets | {s['p2_games']} ({format_tennis_score(s['p2_points'])})</h3>
     </div>
     """, unsafe_allow_html=True)
 
-    # FLUXO DE SCOUT
+    st.divider()
+
+    # FASE 1: DIREÇÃO DO SAQUE
     if st.session_state.step == "Service":
         st.subheader("📍 Direção do Saque")
         c1, c2, c3 = st.columns(3)
         if c1.button("WIDE", use_container_width=True): 
-            st.session_state.last_serve, st.session_state.step = "Wide", "Result"
+            st.session_state.last_serve = "Wide"
+            st.session_state.step = "Result"
             st.rerun()
         if c2.button("BODY", use_container_width=True): 
-            st.session_state.last_serve, st.session_state.step = "Body", "Result"
+            st.session_state.last_serve = "Body"
+            st.session_state.step = "Result"
             st.rerun()
         if c3.button("T", use_container_width=True): 
-            st.session_state.last_serve, st.session_state.step = "T", "Result"
+            st.session_state.last_serve = "T"
+            st.session_state.step = "Result"
             st.rerun()
 
+    # FASE 2: RESULTADO DO PONTO
     elif st.session_state.step == "Result":
-        st.subheader("🎯 Desfecho")
+        st.subheader("🎯 Desfecho do Ponto")
         res_c1, res_c2 = st.columns(2)
         if res_c1.button("🏆 WINNER", type="primary", use_container_width=True):
-            st.session_state.last_res, st.session_state.step = "Winner", "Context"
+            st.session_state.last_res = "Winner"
+            st.session_state.err_cat = "N/A"
+            st.session_state.step = "Context"
             st.rerun()
         if res_c2.button("📉 ERRO", type="secondary", use_container_width=True):
-            st.session_state.last_res, st.session_state.step = "ErrorType"
+            st.session_state.last_res = "Erro"
+            st.session_state.step = "ErrorType"
             st.rerun()
 
+    # FASE 3: QUALIFICAÇÃO DO ERRO
     elif st.session_state.step == "ErrorType":
         st.subheader("❌ Qualificação do Erro")
         e1, e2 = st.columns(2)
         if e1.button("NÃO FORÇADO", use_container_width=True):
-            st.session_state.err_cat, st.session_state.step = "Unforced", "Context"
+            st.session_state.err_cat = "Unforced"
+            st.session_state.step = "Context"
             st.rerun()
         if e2.button("FORÇADO", use_container_width=True):
-            st.session_state.err_cat, st.session_state.step = "Forced", "Context"
+            st.session_state.err_cat = "Forced"
+            st.session_state.step = "Context"
             st.rerun()
 
+    # FASE 4: CONTEXTO TÁTICO FINAL
     elif st.session_state.step == "Context":
-        st.subheader("📊 Detalhes Finais")
+        st.subheader("📊 Detalhes Finais do Golpe")
         winner_pt = st.radio("Ponto para:", [p1, p2], horizontal=True)
-        golpe = st.selectbox("Golpe", ["Forehand", "Backhand", "Voleio", "Smash", "Drop Shot"])
-        dir_g = st.radio("Direção", ["Cruzada", "Paralela"], horizontal=True)
-        pos = st.radio("Posição", ["Baseline", "Rede"], horizontal=True)
+        golpe = st.selectbox("Tipo de Golpe", ["Forehand", "Backhand", "Voleio", "Smash", "Drop Shot"])
+        dir_g = st.radio("Direção do Golpe", ["Cruzada", "Paralela"], horizontal=True)
+        pos = st.radio("Posição do Jogador", ["Baseline", "Rede"], horizontal=True)
         
-        if st.button("REGISTRAR PONTO", use_container_width=True, type="primary"):
-            # Atualiza Placar (Simplificado)
-            if winner_pt == p1: st.session_state.score["p1_points"] += 1
-            else: st.session_state.score["p2_points"] += 1
+        if st.button("CONFIRMAR E REGISTRAR PONTO", use_container_width=True, type="primary"):
+            # Lógica de atualização de placar interno
+            if winner_pt == p1: 
+                st.session_state.score["p1_points"] += 1
+            else: 
+                st.session_state.score["p2_points"] += 1
             
+            # Registro na Base de Dados
             st.session_state.match_data.append({
-                "Vencedor": winner_pt, "Saque": st.session_state.last_serve, 
-                "Tipo": st.session_state.last_res, "Golpe": golpe, "Direção": dir_g, "Posição": pos
+                "Vencedor": winner_pt, 
+                "Saque": st.session_state.last_serve, 
+                "Resultado": st.session_state.last_res, 
+                "Cat_Erro": st.session_state.err_cat,
+                "Golpe": golpe, 
+                "Direção": dir_g, 
+                "Posição": pos
             })
+            
+            # Retorno ao Saque
             st.session_state.step = "Service"
             st.rerun()
 
     st.divider()
-    if st.button("📥 BAIXAR SCOUT (CSV/PDF)"):
-        df = pd.DataFrame(st.session_state.match_data)
-        st.download_button("Clique para Download", df.to_csv(index=False), "scout-tennis-report.csv", "text/csv")
+    
+    # RODAPÉ DE GESTÃO
+    col_f1, col_f2 = st.columns(2)
+    with col_f1:
