@@ -3,63 +3,73 @@ import pandas as pd
 from fpdf import FPDF
 import plotly.express as px
 
-# --- CONFIGURAÇÃO DE PÁGINA MASTER ---
+# --- CONFIGURAÇÃO MASTER ---
 st.set_page_config(page_title="ATP Scout Pro: Marco Valente Edition", page_icon="🎾", layout="wide")
 
-# --- BLOCO DE ESTILIZAÇÃO CSS (INTERFACE PROFISSIONAL) ---
+# --- ESTILIZAÇÃO DASHBOARD ---
 st.markdown("""
     <style>
-    .main-score { background-color: #001e36; padding: 30px; border-radius: 15px; border-left: 10px solid #00feab; text-align: center; margin-bottom: 25px;}
-    .set-score-banner { background-color: #00feab; color: #001e36; font-weight: 900; font-size: 24px; border-radius: 5px; padding: 8px; margin-bottom: 20px; text-transform: uppercase;}
-    .player-name { color: #FFFFFF; font-size: 28px; font-weight: bold; }
-    .score-value { color: #00feab; font-size: 40px; font-weight: 900; }
-    .serve-badge { background-color: #DFFF00; color: #000; padding: 12px 35px; border-radius: 50px; font-weight: 900; font-size: 22px; display: inline-block; margin-bottom: 20px; border: 3px solid #000; }
-    .step-label { color: #AAAAAA; text-transform: uppercase; font-size: 14px; font-weight: bold; margin-bottom: 8px; display: block;}
-    .stButton>button { width: 100%; border-radius: 8px; font-weight: bold; }
+    .main-score { background-color: #001e36; padding: 25px; border-radius: 15px; border-left: 10px solid #00feab; text-align: center; margin-bottom: 20px;}
+    .set-score-banner { background-color: #00feab; color: #001e36; font-weight: 900; font-size: 22px; border-radius: 5px; padding: 5px; margin-bottom: 15px; }
+    .player-name { color: #FFFFFF; font-size: 24px; font-weight: bold; }
+    .score-value { color: #00feab; font-size: 38px; font-weight: 900; }
+    .serve-badge { background-color: #DFFF00; color: #000; padding: 10px 25px; border-radius: 50px; font-weight: 900; border: 2px solid #000; }
+    .stats-table { width: 100%; border-collapse: collapse; margin-top: 20px; color: white; background: #001e36; border-radius: 10px; overflow: hidden; }
+    .stats-header { background: #00feab; color: #001e36; font-weight: 900; padding: 10px; text-align: center; }
+    .stats-row { border-bottom: 1px solid #004080; }
+    .stats-cell { padding: 12px; text-align: center; font-family: 'Courier New', monospace; }
+    .stats-label { color: #AAAAAA; font-size: 12px; font-weight: bold; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- ENGINE DE GERAÇÃO DE RELATÓRIO PDF COMPLETO ---
-def generate_pdf(data, p1, p2, score_final):
+# --- FUNÇÕES DE CÁLCULO ESTATÍSTICO (MATCH STATS) ---
+def calculate_match_stats(df, p1, p2):
+    stats = []
+    for p in [p1, p2]:
+        p_df = df[df['Vencedor'] == p]
+        opp_df = df[df['Vencedor'] != p]
+        
+        # Filtros de Saque (assumindo que o sacador é quem inicia o ponto no registro)
+        # Nota: No sistema, rastreamos o vencedor do ponto. Para estatística de saque completa, 
+        # baseamos no 'server_idx' do momento do ponto.
+        aces = len(df[(df['Vencedor'] == p) & (df['Resultado'] == 'Ace')])
+        df_faults = len(df[(df['Vencedor'] != p) & (df['Resultado'] == 'Dupla Falta')])
+        winners = len(df[(df['Vencedor'] == p) & (df['Categoria'] == 'Winner')])
+        ue = len(df[(df['Vencedor'] != p) & (df['Categoria'] == 'Unforced')]) # Erro do oponente = ponto ganho
+        
+        # Rede (Net Points)
+        net_won = len(df[(df['Vencedor'] == p) & (df['Posicao'] == 'Rede')])
+        net_total = len(df[df['Posicao'] == 'Rede']) # Simplificação: subidas com desfecho
+        net_pct = (net_won / net_total * 100) if net_total > 0 else 0
+
+        stats.append({
+            "Player": p, "Aces": aces, "Duplas Faltas": df_faults, 
+            "Winners": winners, "Erros Não Forçados": len(df[(df['Vencedor'] != p) & (df['Categoria'] == 'Unforced')]),
+            "Pontos na Rede": f"{net_won}/{net_total} ({net_pct:.0f}%)",
+            "Total Pontos": len(p_df)
+        })
+    return stats
+
+# --- ENGINE PDF ---
+def generate_pdf(data, p1, p2, score_f):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Helvetica", "B", 20)
-    pdf.cell(190, 15, "OFFICIAL ATP SCOUT REPORT", ln=True, align="C")
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(190, 10, f"Match: {p1} vs {p2}", ln=True, align="C")
-    pdf.cell(190, 10, f"Placar Final: {score_final}", ln=True, align="C")
+    pdf.set_font("Helvetica", "B", 20); pdf.cell(190, 15, "MATCH STATS REPORT", ln=True, align="C")
+    pdf.set_font("Helvetica", "B", 12); pdf.cell(190, 10, f"{p1} vs {p2} | {score_f}", ln=True, align="C")
     pdf.ln(10)
-    
-    # Cabeçalho da Tabela
-    pdf.set_fill_color(0, 254, 171)
-    pdf.set_font("Helvetica", "B", 10)
+    # Tabela detalhada de pontos no PDF
+    pdf.set_fill_color(0, 254, 171); pdf.set_font("Helvetica", "B", 10)
     cols = ["Vencedor", "Resultado", "Golpe", "Zona", "Direção", "Placar"]
-    widths = [32, 32, 32, 30, 32, 32]
-    for i, col in enumerate(cols): pdf.cell(widths[i], 12, col, 1, 0, "C", True)
+    for i, col in enumerate(cols): pdf.cell(31, 10, col, 1, 0, "C", True)
     pdf.ln()
-    
-    # Preenchimento de Dados
-    pdf.set_font("Helvetica", size=9)
+    pdf.set_font("Helvetica", size=8)
     for row in data:
-        pdf.cell(widths[0], 10, str(row.get("Vencedor", "-")), 1)
-        pdf.cell(widths[1], 10, str(row.get("Resultado", "-")), 1)
-        pdf.cell(widths[2], 10, str(row.get("Golpe", "-")), 1)
-        pdf.cell(widths[3], 10, str(row.get("Posicao", "-")), 1)
-        pdf.cell(widths[4], 10, str(row.get("Direcao", "-")), 1)
-        pdf.cell(widths[5], 10, str(row.get("Score", "-")), 1)
+        for key in ["Vencedor", "Resultado", "Golpe", "Posicao", "Direcao", "Score"]:
+            pdf.cell(31, 8, str(row.get(key, "-")), 1)
         pdf.ln()
     return bytes(pdf.output())
 
-# --- LÓGICA DE PONTUAÇÃO ATP (TRADICIONAL) ---
-def format_pts(p1, p2):
-    mapping = {0: "0", 1: "15", 2: "30", 3: "40"}
-    if p1 <= 3 and p2 <= 3:
-        if p1 == 3 and p2 == 3: return "40", "40"
-        return mapping[p1], mapping[p2]
-    if p1 == p2: return "40", "40"
-    return ("AD", "40") if p1 > p2 else ("40", "AD")
-
-# --- INICIALIZAÇÃO E GESTÃO DE ESTADOS (SESSION STATE) ---
+# --- ESTADOS ---
 if 'match_data' not in st.session_state: st.session_state.match_data = []
 if 'score' not in st.session_state: 
     st.session_state.score = {"p1_pts": 0, "p2_pts": 0, "p1_gms": 0, "p2_gms": 0, "p1_sets": 0, "p2_sets": 0, "history": []}
@@ -69,165 +79,169 @@ if 'step' not in st.session_state: st.session_state.step = "SERVICE"
 if 'serve_num' not in st.session_state: st.session_state.serve_num = 1
 if 'temp_data' not in st.session_state: st.session_state.temp_data = {}
 
-# --- FUNÇÃO PRINCIPAL: REGISTRO E CÁLCULO DE PONTOS ---
 def register_point(winner_name, res, cat="Winner", golpe="Saque", dir_g="N/A", pos="Baseline"):
     s = st.session_state.score
     setup = st.session_state.setup
-    
-    # Incremento de Pontos
     if winner_name == setup['p1']: s["p1_pts"] += 1
     else: s["p2_pts"] += 1
     
-    # Fechamento de Game
+    # Lógica Game/Set/Match (ATP)
     if (s["p1_pts"] >= 4 and s["p1_pts"] - s["p2_pts"] >= 2) or (s["p2_pts"] >= 4 and s["p2_pts"] - s["p1_pts"] >= 2):
         if s["p1_pts"] > s["p2_pts"]: s["p1_gms"] += 1
         else: s["p2_gms"] += 1
         s["p1_pts"], s["p2_pts"] = 0, 0
         setup['server'] = 2 if setup['server'] == 1 else 1
-        
-        # Fechamento de Set
         g1, g2 = s["p1_gms"], s["p2_gms"]
         if (g1 >= 6 and g1 - g2 >= 2) or g1 == 7 or (g2 >= 6 and g2 - g1 >= 2) or g2 == 7:
             if g1 > g2: s["p1_sets"] += 1
             else: s["p2_sets"] += 1
-            s["history"].append(f"{g1}-{g2}")
-            s["p1_gms"], s["p2_gms"] = 0, 0
-            
-            # Fim da Partida
+            s["history"].append(f"{g1}-{g2}"); s["p1_gms"], s["p2_gms"] = 0, 0
             target = {"Set Único": 1, "Melhor de 3": 2, "Melhor de 5": 3}[setup["format"]]
-            if s["p1_sets"] == target or s["p2_sets"] == target:
-                setup["match_over"] = True
+            if s["p1_sets"] == target or s["p2_sets"] == target: setup["match_over"] = True
 
-    # Armazenamento no Histórico
     st.session_state.match_data.append({
         "Vencedor": winner_name, "Resultado": res, "Categoria": cat, "Golpe": golpe, "Direcao": dir_g, "Posicao": pos,
         "Score": f"{s['p1_sets']}-{s['p2_sets']} ({s['p1_gms']}-{s['p2_gms']})"
     })
-    
-    # Reset de Fluxo
-    st.session_state.step = "SERVICE"
-    st.session_state.serve_num = 1
-    st.session_state.temp_data = {}
+    st.session_state.step = "SERVICE"; st.session_state.serve_num = 1; st.session_state.temp_data = {}
 
-# --- INTERFACE DE SETUP INICIAL ---
+# --- INTERFACE ---
 if not st.session_state.setup["active"]:
-    st.title("🎾 Scout-Tennis Pro: Elite Management")
+    st.title("🎾 ATP Scout Pro: Marco Valente Edition")
     with st.container(border=True):
         c1, c2 = st.columns(2)
-        p1_in = c1.text_input("Jogador A (Mandante)", "Atleta 1")
-        p2_in = c2.text_input("Jogador B (Visitante)", "Atleta 2")
-        
-        c3, c4 = st.columns(2)
-        format_in = c3.selectbox("Formato da Partida:", ["Set Único", "Melhor de 3", "Melhor de 5"], index=1)
-        srv_in = c4.radio("Quem inicia sacando?", [p1_in, p2_in], horizontal=True)
-        
-        if st.button("🚀 INICIAR PARTIDA E ABRIR SCOUT"):
-            st.session_state.setup.update({"active": True, "p1": p1_in, "p2": p2_in, "server": 1 if srv_in == p1_in else 2, "format": format_in})
+        p1_in = c1.text_input("Atleta A", "Jogador 1")
+        p2_in = c2.text_input("Atleta B", "Jogador 2")
+        fmt = st.selectbox("Formato:", ["Set Único", "Melhor de 3", "Melhor de 5"], index=1)
+        srv = st.radio("Sacador Inicial:", [p1_in, p2_in], horizontal=True)
+        if st.button("🚀 INICIAR SCOUT"):
+            st.session_state.setup.update({"active": True, "p1": p1_in, "p2": p2_in, "server": 1 if srv == p1_in else 2, "format": fmt})
             st.rerun()
-
 else:
-    # --- SIDEBAR DE ESTATÍSTICAS EM TEMPO REAL ---
-    with st.sidebar:
-        st.header("📊 Análise de Dados")
+    # --- DASHBOARD DE ESTATÍSTICAS PROFISSIONAIS (MATCH STATS) ---
+    with st.expander("📊 MATCH STATS - BROADCASTING STANDARD", expanded=True):
         if st.session_state.match_data:
             df_stats = pd.DataFrame(st.session_state.match_data)
-            st.plotly_chart(px.pie(df_stats, names='Vencedor', hole=0.4, title="Domínio de Pontos"), use_container_width=True)
-            st.write(f"Pontos registrados: {len(df_stats)}")
-            st.divider()
-            st.markdown("**Último Ponto:**")
-            st.json(st.session_state.match_data[-1])
-        if st.button("🚨 RESET TOTAL"): st.session_state.clear(); st.rerun()
+            p1_n, p2_n = st.session_state.setup['p1'], st.session_state.setup['p2']
+            ms = calculate_match_stats(df_stats, p1_n, p2_n)
+            
+            # Tabela Estilo TV
+            st.markdown(f"""
+            <table class="stats-table">
+                <tr class="stats-header">
+                    <th style="width:30%">{p1_n}</th>
+                    <th style="width:40%">ESTATÍSTICA</th>
+                    <th style="width:30%">{p2_n}</th>
+                </tr>
+                <tr class="stats-row">
+                    <td class="stats-cell">{ms[0]['Aces']}</td>
+                    <td class="stats-cell stats-label">ACES</td>
+                    <td class="stats-cell">{ms[1]['Aces']}</td>
+                </tr>
+                <tr class="stats-row">
+                    <td class="stats-cell">{ms[0]['Duplas Faltas']}</td>
+                    <td class="stats-cell stats-label">DUPLAS FALTAS</td>
+                    <td class="stats-cell">{ms[1]['Duplas Faltas']}</td>
+                </tr>
+                <tr class="stats-row">
+                    <td class="stats-cell">{ms[0]['Winners']}</td>
+                    <td class="stats-cell stats-label">WINNERS</td>
+                    <td class="stats-cell">{ms[1]['Winners']}</td>
+                </tr>
+                <tr class="stats-row">
+                    <td class="stats-cell">{ms[0]['Erros Não Forçados']}</td>
+                    <td class="stats-cell stats-label">ERROS NÃO FORÇADOS</td>
+                    <td class="stats-cell">{ms[1]['Erros Não Forçados']}</td>
+                </tr>
+                <tr class="stats-row">
+                    <td class="stats-cell">{ms[0]['Pontos na Rede']}</td>
+                    <td class="stats-cell stats-label">PONTOS NA REDE</td>
+                    <td class="stats-cell">{ms[1]['Pontos na Rede']}</td>
+                </tr>
+                <tr class="stats-row">
+                    <td class="stats-cell" style="color:#00feab; font-weight:bold;">{ms[0]['Total Pontos']}</td>
+                    <td class="stats-cell stats-label">TOTAL DE PONTOS</td>
+                    <td class="stats-cell" style="color:#00feab; font-weight:bold;">{ms[1]['Total Pontos']}</td>
+                </tr>
+            </table>
+            """, unsafe_allow_html=True)
+        else:
+            st.info("Aguardando dados para gerar estatísticas...")
 
     # --- PLACAR CENTRAL ---
     s = st.session_state.score
     p1_n, p2_n = st.session_state.setup['p1'], st.session_state.setup['p2']
     srv_idx = st.session_state.setup['server']
-    pt1, pt2 = format_pts(s["p1_pts"], s["p2_pts"])
+    
+    # Mapeamento 15-30-40-AD
+    def get_atp_pt(p_pts, opp_pts):
+        m = {0: "0", 1: "15", 2: "30", 3: "40"}
+        if p_pts <= 3 and opp_pts <= 3:
+            return m[p_pts]
+        if p_pts == opp_pts: return "40"
+        return "AD" if p_pts > opp_pts else "40"
+
+    pt1 = get_atp_pt(s["p1_pts"], s["p2_pts"])
+    pt2 = get_atp_pt(s["p2_pts"], s["p1_pts"])
     
     st.markdown(f"""
     <div class="main-score">
-        <div class="set-score-banner">{st.session_state.setup['format'].upper()} | Sets Finalizados: {", ".join(s['history']) if s['history'] else "0-0"}</div>
+        <div class="set-score-banner">{st.session_state.setup['format']} | Sets: {", ".join(s['history']) if s['history'] else "0-0"}</div>
         <div class="player-name">{p1_n}{" 🎾" if srv_idx == 1 else ""}</div>
-        <div class="score-value">SETS: {s['p1_sets']} | GAMES: {s['p1_gms']} | <span style='color:white;'>({pt1})</span></div>
-        <hr style="border: 0.5px solid #004080; margin: 15px 0;">
+        <div class="score-value">{s['p1_sets']} | {s['p1_gms']} | <span style="color:white">{pt1}</span></div>
+        <hr style="border:0.5px solid #004080; margin:10px 0;">
         <div class="player-name">{p2_n}{" 🎾" if srv_idx == 2 else ""}</div>
-        <div class="score-value">SETS: {s['p2_sets']} | GAMES: {s['p2_gms']} | <span style='color:white;'>({pt2})</span></div>
+        <div class="score-value">{s['p2_sets']} | {s['p2_gms']} | <span style="color:white">{pt2}</span></div>
     </div>
     """, unsafe_allow_html=True)
 
-    # --- INTERFACE DE SCOUTING (ETAPAS) ---
+    # --- ÁREA DE SCOUTING ---
     if not st.session_state.setup["match_over"]:
-        
-        # PASSO 1: O SAQUE
         if st.session_state.step == "SERVICE":
-            st.markdown(f"<div style='text-align:center'><span class='serve-badge'>{st.session_state.serve_num}º SERVIÇO</span></div>", unsafe_allow_html=True)
-            st.markdown("<span class='step-label'>1. Direção do Saque:</span>", unsafe_allow_html=True)
-            cs1, cs2, cs3 = st.columns(3)
-            if cs1.button("WIDE (Aberto)"): st.session_state.temp_data['dir_saque'] = "Wide"; st.session_state.step = "RESULT"; st.rerun()
-            if cs2.button("BODY (Corpo)"): st.session_state.temp_data['dir_saque'] = "Body"; st.session_state.step = "RESULT"; st.rerun()
-            if cs3.button("T (Centro)"): st.session_state.temp_data['dir_saque'] = "T"; st.session_state.step = "RESULT"; st.rerun()
-            
-            st.divider()
+            st.markdown(f"<center><span class='serve-badge'>{st.session_state.serve_num}º SERVIÇO</span></center>", unsafe_allow_html=True)
+            c1, c2, c3 = st.columns(3)
+            if c1.button("WIDE"): st.session_state.temp_data['dir'] = "Wide"; st.session_state.step = "RESULT"; st.rerun()
+            if c2.button("BODY"): st.session_state.temp_data['dir'] = "Body"; st.session_state.step = "RESULT"; st.rerun()
+            if c3.button("T"): st.session_state.temp_data['dir'] = "T"; st.session_state.step = "RESULT"; st.rerun()
             if st.button("❌ FALTA / NET"):
                 if st.session_state.serve_num == 1: st.session_state.serve_num = 2; st.rerun()
                 else: register_point(p2_n if srv_idx == 1 else p1_n, "Dupla Falta", "Erro", "Saque"); st.rerun()
 
-        # PASSO 2: O RESULTADO DO PONTO
         elif st.session_state.step == "RESULT":
-            st.markdown("<span class='step-label'>2. Desfecho do Ponto:</span>", unsafe_allow_html=True)
+            st.markdown("<span class='step-label'>Desfecho:</span>", unsafe_allow_html=True)
             cr1, cr2, cr3 = st.columns(3)
-            if cr1.button("🏆 WINNER", type="primary"): 
-                st.session_state.temp_data.update({'res':'Winner','cat':'Winner'}); st.session_state.step = "DETAIL"; st.rerun()
-            if cr2.button("📉 ERRO NÃO FORÇADO"): 
-                st.session_state.temp_data.update({'res':'Erro','cat':'Unforced'}); st.session_state.step = "DETAIL"; st.rerun()
-            if cr3.button("💥 ERRO FORÇADO"): 
-                st.session_state.temp_data.update({'res':'Erro','cat':'Forced'}); st.session_state.step = "DETAIL"; st.rerun()
-            
+            if cr1.button("🏆 WINNER"): st.session_state.temp_data.update({'res':'Winner','cat':'Winner'}); st.session_state.step = "DETAIL"; st.rerun()
+            if cr2.button("📉 N. FORÇADO"): st.session_state.temp_data.update({'res':'Erro','cat':'Unforced'}); st.session_state.step = "DETAIL"; st.rerun()
+            if cr3.button("💥 FORÇADO"): st.session_state.temp_data.update({'res':'Erro','cat':'Forced'}); st.session_state.step = "DETAIL"; st.rerun()
             st.divider()
-            if st.button("🎯 ACE"): register_point(p1_n if srv_idx == 1 else p2_n, "Ace", "Winner", "Saque", st.session_state.temp_data['dir_saque']); st.rerun()
-            if st.button("🎾 SERVICE WINNER"): register_point(p1_n if srv_idx == 1 else p2_n, "Service Winner", "Winner", "Saque", st.session_state.temp_data['dir_saque']); st.rerun()
+            if st.button("🎯 ACE"): register_point(p1_n if srv_idx == 1 else p2_n, "Ace", "Winner", "Saque", st.session_state.temp_data['dir']); st.rerun()
+            if st.button("🎾 SERVICE WINNER"): register_point(p1_n if srv_idx == 1 else p2_n, "Service Winner", "Winner", "Saque", st.session_state.temp_data['dir']); st.rerun()
 
-        # PASSO 3: O RIGOR TÉCNICO (DETALHAMENTO)
         elif st.session_state.step == "DETAIL":
-            st.markdown("<span class='step-label'>3. Detalhamento Técnico Final:</span>", unsafe_allow_html=True)
-            winner_choice = st.radio("Ponto registrado para:", [p1_n, p2_n], horizontal=True)
+            winner = st.radio("Ponto para:", [p1_n, p2_n], horizontal=True)
+            cg, cz = st.columns(2)
+            golpe = cg.selectbox("Golpe:", ["Forehand", "Backhand", "Voleio", "Smash", "Drop Shot", "Slice"])
             
-            col_g, col_z = st.columns(2)
-            golpe = col_g.selectbox("Golpe Definidor:", ["Forehand", "Backhand", "Voleio", "Smash", "Drop Shot", "Slice"])
-            
-            # --- LÓGICA DE RIGOR TÉCNICO MARCO VALENTE ---
+            # Rigor Marco Valente
             if golpe == "Voleio":
-                # Voleio obrigatoriamente na rede
-                zona = col_z.radio("Zona da Quadra:", ["Rede"], index=0)
-                st.warning("⚠️ Voleio: Zona travada em 'Rede' por impossibilidade técnica de fundo.")
+                zona = cz.radio("Zona:", ["Rede"], index=0)
             elif golpe == "Smash":
-                # Smash pode ser fundo (back-court overhead)
-                zona = col_z.radio("Zona da Quadra:", ["Rede", "Baseline"], index=0)
-                st.info("ℹ️ Smash: Zona flexível para permitir smashes de fundo de quadra.")
+                zona = cz.radio("Zona:", ["Rede", "Baseline"], index=0)
             else:
-                # Padrão
-                zona = col_z.radio("Zona da Quadra:", ["Baseline", "Rede"], index=0)
+                zona = cz.radio("Zona:", ["Baseline", "Rede"], index=0)
             
-            # Direções Táticas (Drop Shot é a própria definição de curta, por isso removida como direção)
-            direcao = st.radio("Direção da Bola:", ["Cruzada", "Paralela", "No Corpo"], horizontal=True)
-            
-            if st.button("✅ REGISTRAR NO SCOUT"):
-                register_point(winner_choice, st.session_state.temp_data['res'], st.session_state.temp_data['cat'], golpe, direcao, zona)
-                st.rerun()
+            direcao = st.radio("Direção:", ["Cruzada", "Paralela", "No Corpo"], horizontal=True)
+            if st.button("✅ REGISTRAR"):
+                register_point(winner, st.session_state.temp_data['res'], st.session_state.temp_data['cat'], golpe, direcao, zona); st.rerun()
     else:
-        st.balloons()
-        st.success("🏆 PARTIDA FINALIZADA!")
+        st.success("FIM DE JOGO!")
 
-    # --- RODAPÉ, DESFAZER E DOWNLOAD ---
+    # --- FOOTER ---
     st.divider()
-    bot1, bot2, bot3 = st.columns([1, 1, 2])
-    with bot1:
-        if st.button("🔄 DESFAZER ÚLTIMO"):
-            if st.session_state.match_data: st.session_state.match_data.pop(); st.rerun()
-    with bot2:
-        if st.button("🆕 NOVA PARTIDA"): st.session_state.clear(); st.rerun()
-    with bot3:
-        if st.session_state.match_data:
-            score_final_str = f"{s['p1_sets']}-{s['p2_sets']} ({', '.join(s['history'])})"
-            pdf_bytes = generate_pdf(st.session_state.match_data, p1_n, p2_n, score_final_str)
-            st.download_button("📥 EXPORTAR PDF COMPLETO", data=pdf_bytes, file_name="scout_atp_completo.pdf", mime="application/pdf")
+    f1, f2, f3 = st.columns([1,1,2])
+    if f1.button("🔄 DESFAZER"): 
+        if st.session_state.match_data: st.session_state.match_data.pop(); st.rerun()
+    if f2.button("🆕 NOVO"): st.session_state.clear(); st.rerun()
+    if st.session_state.match_data:
+        score_f = f"{s['p1_sets']}-{s['p2_sets']} ({', '.join(s['history'])})"
+        st.download_button("📥 PDF REPORT", generate_pdf(st.session_state.match_data, p1_n, p2_n, score_f), "scout.pdf")
