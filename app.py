@@ -6,47 +6,54 @@ import plotly.express as px
 # --- CONFIGURAÇÃO MASTER ---
 st.set_page_config(page_title="ATP Scout Pro: Marco Valente Edition", page_icon="🎾", layout="wide")
 
-# --- ESTILIZAÇÃO DASHBOARD ---
+# --- ESTILIZAÇÃO DASHBOARD PROFISSIONAL ---
 st.markdown("""
     <style>
     .main-score { background-color: #001e36; padding: 25px; border-radius: 15px; border-left: 10px solid #00feab; text-align: center; margin-bottom: 20px;}
     .set-score-banner { background-color: #00feab; color: #001e36; font-weight: 900; font-size: 22px; border-radius: 5px; padding: 5px; margin-bottom: 15px; }
     .player-name { color: #FFFFFF; font-size: 24px; font-weight: bold; }
     .score-value { color: #00feab; font-size: 38px; font-weight: 900; }
-    .serve-badge { background-color: #DFFF00; color: #000; padding: 10px 25px; border-radius: 50px; font-weight: 900; border: 2px solid #000; }
-    .stats-table { width: 100%; border-collapse: collapse; margin-top: 20px; color: white; background: #001e36; border-radius: 10px; overflow: hidden; }
-    .stats-header { background: #00feab; color: #001e36; font-weight: 900; padding: 10px; text-align: center; }
+    .serve-badge { background-color: #DFFF00; color: #000; padding: 10px 25px; border-radius: 50px; font-weight: 900; border: 2px solid #000; display: inline-block; margin-bottom: 15px; }
+    .stats-table { width: 100%; border-collapse: collapse; margin-top: 20px; color: white; background: #001e36; border-radius: 10px; overflow: hidden; border: 1px solid #004080; }
+    .stats-header { background: #00feab; color: #001e36; font-weight: 900; padding: 12px; text-align: center; font-size: 18px; }
     .stats-row { border-bottom: 1px solid #004080; }
-    .stats-cell { padding: 12px; text-align: center; font-family: 'Courier New', monospace; }
-    .stats-label { color: #AAAAAA; font-size: 12px; font-weight: bold; }
+    .stats-cell { padding: 15px; text-align: center; font-family: 'Courier New', monospace; font-size: 16px; }
+    .stats-label { color: #AAAAAA; font-size: 13px; font-weight: bold; text-transform: uppercase; }
+    .step-label { color: #AAAAAA; text-transform: uppercase; font-size: 13px; font-weight: bold; margin-bottom: 5px; display: block;}
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNÇÕES DE CÁLCULO ESTATÍSTICO (MATCH STATS) ---
+# --- ENGINE DE CÁLCULO ESTATÍSTICO AVANÇADO ---
 def calculate_match_stats(df, p1, p2):
     stats = []
+    total_pts_match = len(df)
     for p in [p1, p2]:
-        p_df = df[df['Vencedor'] == p]
-        opp_df = df[df['Vencedor'] != p]
+        p_pts_won = len(df[df['Vencedor'] == p])
+        opp_pts_won = len(df[df['Vencedor'] != p])
         
-        # Filtros de Saque (assumindo que o sacador é quem inicia o ponto no registro)
-        # Nota: No sistema, rastreamos o vencedor do ponto. Para estatística de saque completa, 
-        # baseamos no 'server_idx' do momento do ponto.
+        # Aces e Duplas Faltas
         aces = len(df[(df['Vencedor'] == p) & (df['Resultado'] == 'Ace')])
         df_faults = len(df[(df['Vencedor'] != p) & (df['Resultado'] == 'Dupla Falta')])
-        winners = len(df[(df['Vencedor'] == p) & (df['Categoria'] == 'Winner')])
-        ue = len(df[(df['Vencedor'] != p) & (df['Categoria'] == 'Unforced')]) # Erro do oponente = ponto ganho
         
-        # Rede (Net Points)
-        net_won = len(df[(df['Vencedor'] == p) & (df['Posicao'] == 'Rede')])
-        net_total = len(df[df['Posicao'] == 'Rede']) # Simplificação: subidas com desfecho
+        # Winners e Erros
+        winners = len(df[(df['Vencedor'] == p) & (df['Categoria'] == 'Winner')])
+        ue = len(df[(df['Vencedor'] != p) & (df['Categoria'] == 'Unforced')])
+        forced = len(df[(df['Vencedor'] != p) & (df['Categoria'] == 'Forced')])
+        
+        # Aproveitamento de Rede (Rigor Marco Valente)
+        net_pts_p = df[df['Posicao'] == 'Rede']
+        net_won = len(net_pts_p[net_pts_p['Vencedor'] == p])
+        net_total = len(net_pts_p)
         net_pct = (net_won / net_total * 100) if net_total > 0 else 0
 
+        # Percentual de Pontos Totais
+        total_pct = (p_pts_won / total_pts_match * 100) if total_pts_match > 0 else 0
+
         stats.append({
-            "Player": p, "Aces": aces, "Duplas Faltas": df_faults, 
-            "Winners": winners, "Erros Não Forçados": len(df[(df['Vencedor'] != p) & (df['Categoria'] == 'Unforced')]),
-            "Pontos na Rede": f"{net_won}/{net_total} ({net_pct:.0f}%)",
-            "Total Pontos": len(p_df)
+            "Player": p, "Aces": aces, "DF": df_faults, 
+            "Winners": winners, "UE": len(df[(df['Vencedor'] != p) & (df['Categoria'] == 'Unforced')]),
+            "Net": f"{net_won}/{net_total} ({net_pct:.1f}%)",
+            "Total": f"{p_pts_won} ({total_pct:.1f}%)"
         })
     return stats
 
@@ -54,10 +61,9 @@ def calculate_match_stats(df, p1, p2):
 def generate_pdf(data, p1, p2, score_f):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Helvetica", "B", 20); pdf.cell(190, 15, "MATCH STATS REPORT", ln=True, align="C")
+    pdf.set_font("Helvetica", "B", 20); pdf.cell(190, 15, "OFFICIAL SCOUT REPORT", ln=True, align="C")
     pdf.set_font("Helvetica", "B", 12); pdf.cell(190, 10, f"{p1} vs {p2} | {score_f}", ln=True, align="C")
     pdf.ln(10)
-    # Tabela detalhada de pontos no PDF
     pdf.set_fill_color(0, 254, 171); pdf.set_font("Helvetica", "B", 10)
     cols = ["Vencedor", "Resultado", "Golpe", "Zona", "Direção", "Placar"]
     for i, col in enumerate(cols): pdf.cell(31, 10, col, 1, 0, "C", True)
@@ -69,7 +75,7 @@ def generate_pdf(data, p1, p2, score_f):
         pdf.ln()
     return bytes(pdf.output())
 
-# --- ESTADOS ---
+# --- INICIALIZAÇÃO DE ESTADOS ---
 if 'match_data' not in st.session_state: st.session_state.match_data = []
 if 'score' not in st.session_state: 
     st.session_state.score = {"p1_pts": 0, "p2_pts": 0, "p1_gms": 0, "p2_gms": 0, "p1_sets": 0, "p2_sets": 0, "history": []}
@@ -85,7 +91,6 @@ def register_point(winner_name, res, cat="Winner", golpe="Saque", dir_g="N/A", p
     if winner_name == setup['p1']: s["p1_pts"] += 1
     else: s["p2_pts"] += 1
     
-    # Lógica Game/Set/Match (ATP)
     if (s["p1_pts"] >= 4 and s["p1_pts"] - s["p2_pts"] >= 2) or (s["p2_pts"] >= 4 and s["p2_pts"] - s["p1_pts"] >= 2):
         if s["p1_pts"] > s["p2_pts"]: s["p1_gms"] += 1
         else: s["p2_gms"] += 1
@@ -107,7 +112,7 @@ def register_point(winner_name, res, cat="Winner", golpe="Saque", dir_g="N/A", p
 
 # --- INTERFACE ---
 if not st.session_state.setup["active"]:
-    st.title("🎾 ATP Scout Pro: Marco Valente Edition")
+    st.title("🎾 Scout-Tennis Pro: Marco Valente Edition")
     with st.container(border=True):
         c1, c2 = st.columns(2)
         p1_in = c1.text_input("Atleta A", "Jogador 1")
@@ -118,66 +123,14 @@ if not st.session_state.setup["active"]:
             st.session_state.setup.update({"active": True, "p1": p1_in, "p2": p2_in, "server": 1 if srv == p1_in else 2, "format": fmt})
             st.rerun()
 else:
-    # --- DASHBOARD DE ESTATÍSTICAS PROFISSIONAIS (MATCH STATS) ---
-    with st.expander("📊 MATCH STATS - BROADCASTING STANDARD", expanded=True):
-        if st.session_state.match_data:
-            df_stats = pd.DataFrame(st.session_state.match_data)
-            p1_n, p2_n = st.session_state.setup['p1'], st.session_state.setup['p2']
-            ms = calculate_match_stats(df_stats, p1_n, p2_n)
-            
-            # Tabela Estilo TV
-            st.markdown(f"""
-            <table class="stats-table">
-                <tr class="stats-header">
-                    <th style="width:30%">{p1_n}</th>
-                    <th style="width:40%">ESTATÍSTICA</th>
-                    <th style="width:30%">{p2_n}</th>
-                </tr>
-                <tr class="stats-row">
-                    <td class="stats-cell">{ms[0]['Aces']}</td>
-                    <td class="stats-cell stats-label">ACES</td>
-                    <td class="stats-cell">{ms[1]['Aces']}</td>
-                </tr>
-                <tr class="stats-row">
-                    <td class="stats-cell">{ms[0]['Duplas Faltas']}</td>
-                    <td class="stats-cell stats-label">DUPLAS FALTAS</td>
-                    <td class="stats-cell">{ms[1]['Duplas Faltas']}</td>
-                </tr>
-                <tr class="stats-row">
-                    <td class="stats-cell">{ms[0]['Winners']}</td>
-                    <td class="stats-cell stats-label">WINNERS</td>
-                    <td class="stats-cell">{ms[1]['Winners']}</td>
-                </tr>
-                <tr class="stats-row">
-                    <td class="stats-cell">{ms[0]['Erros Não Forçados']}</td>
-                    <td class="stats-cell stats-label">ERROS NÃO FORÇADOS</td>
-                    <td class="stats-cell">{ms[1]['Erros Não Forçados']}</td>
-                </tr>
-                <tr class="stats-row">
-                    <td class="stats-cell">{ms[0]['Pontos na Rede']}</td>
-                    <td class="stats-cell stats-label">PONTOS NA REDE</td>
-                    <td class="stats-cell">{ms[1]['Pontos na Rede']}</td>
-                </tr>
-                <tr class="stats-row">
-                    <td class="stats-cell" style="color:#00feab; font-weight:bold;">{ms[0]['Total Pontos']}</td>
-                    <td class="stats-cell stats-label">TOTAL DE PONTOS</td>
-                    <td class="stats-cell" style="color:#00feab; font-weight:bold;">{ms[1]['Total Pontos']}</td>
-                </tr>
-            </table>
-            """, unsafe_allow_html=True)
-        else:
-            st.info("Aguardando dados para gerar estatísticas...")
-
-    # --- PLACAR CENTRAL ---
+    # --- PLACAR CENTRAL (TOPO) ---
     s = st.session_state.score
     p1_n, p2_n = st.session_state.setup['p1'], st.session_state.setup['p2']
     srv_idx = st.session_state.setup['server']
     
-    # Mapeamento 15-30-40-AD
     def get_atp_pt(p_pts, opp_pts):
         m = {0: "0", 1: "15", 2: "30", 3: "40"}
-        if p_pts <= 3 and opp_pts <= 3:
-            return m[p_pts]
+        if p_pts <= 3 and opp_pts <= 3: return m[p_pts]
         if p_pts == opp_pts: return "40"
         return "AD" if p_pts > opp_pts else "40"
 
@@ -195,7 +148,7 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-    # --- ÁREA DE SCOUTING ---
+    # --- ÁREA DE INPUT (SCOUTING) ---
     if not st.session_state.setup["match_over"]:
         if st.session_state.step == "SERVICE":
             st.markdown(f"<center><span class='serve-badge'>{st.session_state.serve_num}º SERVIÇO</span></center>", unsafe_allow_html=True)
@@ -208,7 +161,6 @@ else:
                 else: register_point(p2_n if srv_idx == 1 else p1_n, "Dupla Falta", "Erro", "Saque"); st.rerun()
 
         elif st.session_state.step == "RESULT":
-            st.markdown("<span class='step-label'>Desfecho:</span>", unsafe_allow_html=True)
             cr1, cr2, cr3 = st.columns(3)
             if cr1.button("🏆 WINNER"): st.session_state.temp_data.update({'res':'Winner','cat':'Winner'}); st.session_state.step = "DETAIL"; st.rerun()
             if cr2.button("📉 N. FORÇADO"): st.session_state.temp_data.update({'res':'Erro','cat':'Unforced'}); st.session_state.step = "DETAIL"; st.rerun()
@@ -222,13 +174,9 @@ else:
             cg, cz = st.columns(2)
             golpe = cg.selectbox("Golpe:", ["Forehand", "Backhand", "Voleio", "Smash", "Drop Shot", "Slice"])
             
-            # Rigor Marco Valente
-            if golpe == "Voleio":
-                zona = cz.radio("Zona:", ["Rede"], index=0)
-            elif golpe == "Smash":
-                zona = cz.radio("Zona:", ["Rede", "Baseline"], index=0)
-            else:
-                zona = cz.radio("Zona:", ["Baseline", "Rede"], index=0)
+            if golpe == "Voleio": zona = cz.radio("Zona:", ["Rede"], index=0)
+            elif golpe == "Smash": zona = cz.radio("Zona:", ["Rede", "Baseline"], index=0)
+            else: zona = cz.radio("Zona:", ["Baseline", "Rede"], index=0)
             
             direcao = st.radio("Direção:", ["Cruzada", "Paralela", "No Corpo"], horizontal=True)
             if st.button("✅ REGISTRAR"):
@@ -236,12 +184,61 @@ else:
     else:
         st.success("FIM DE JOGO!")
 
-    # --- FOOTER ---
+    # --- MATCH STATS (FINAL DA PÁGINA) ---
+    st.divider()
+    st.subheader("📊 Estatísticas da Partida (Broadcasting Standard)")
+    if st.session_state.match_data:
+        df_stats = pd.DataFrame(st.session_state.match_data)
+        ms = calculate_match_stats(df_stats, p1_n, p2_n)
+        
+        st.markdown(f"""
+        <table class="stats-table">
+            <tr class="stats-header">
+                <th style="width:30%">{p1_n}</th>
+                <th style="width:40%">ESTATÍSTICA</th>
+                <th style="width:30%">{p2_n}</th>
+            </tr>
+            <tr class="stats-row">
+                <td class="stats-cell">{ms[0]['Aces']}</td>
+                <td class="stats-cell stats-label">ACES</td>
+                <td class="stats-cell">{ms[1]['Aces']}</td>
+            </tr>
+            <tr class="stats-row">
+                <td class="stats-cell">{ms[0]['DF']}</td>
+                <td class="stats-cell stats-label">DUPLAS FALTAS</td>
+                <td class="stats-cell">{ms[1]['DF']}</td>
+            </tr>
+            <tr class="stats-row">
+                <td class="stats-cell">{ms[0]['Winners']}</td>
+                <td class="stats-cell stats-label">WINNERS</td>
+                <td class="stats-cell">{ms[1]['Winners']}</td>
+            </tr>
+            <tr class="stats-row">
+                <td class="stats-cell">{ms[0]['UE']}</td>
+                <td class="stats-cell stats-label">ERROS NÃO FORÇADOS</td>
+                <td class="stats-cell">{ms[1]['UE']}</td>
+            </tr>
+            <tr class="stats-row">
+                <td class="stats-cell">{ms[0]['Net']}</td>
+                <td class="stats-cell stats-label">EFICIÊNCIA NA REDE</td>
+                <td class="stats-cell">{ms[1]['Net']}</td>
+            </tr>
+            <tr class="stats-row">
+                <td class="stats-cell" style="color:#00feab; font-weight:bold;">{ms[0]['Total']}</td>
+                <td class="stats-cell stats-label">TOTAL DE PONTOS (% GANHOS)</td>
+                <td class="stats-cell" style="color:#00feab; font-weight:bold;">{ms[1]['Total']}</td>
+            </tr>
+        </table>
+        """, unsafe_allow_html=True)
+    else:
+        st.info("Aguardando dados para consolidar estatísticas.")
+
+    # --- CONTROLES DE RODAPÉ ---
     st.divider()
     f1, f2, f3 = st.columns([1,1,2])
     if f1.button("🔄 DESFAZER"): 
         if st.session_state.match_data: st.session_state.match_data.pop(); st.rerun()
-    if f2.button("🆕 NOVO"): st.session_state.clear(); st.rerun()
+    if f2.button("🆕 NOVO JOGO"): st.session_state.clear(); st.rerun()
     if st.session_state.match_data:
         score_f = f"{s['p1_sets']}-{s['p2_sets']} ({', '.join(s['history'])})"
-        st.download_button("📥 PDF REPORT", generate_pdf(st.session_state.match_data, p1_n, p2_n, score_f), "scout.pdf")
+        st.download_button("📥 EXPORTAR PDF", generate_pdf(st.session_state.match_data, p1_n, p2_n, score_f), "scout.pdf")
