@@ -37,31 +37,36 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- FUNÇÃO GERADORA DE PDF ---
+# --- FUNÇÃO GERADORA DE PDF (CORRIGIDA) ---
 def generate_pdf(data, p1, p2):
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Arial", "B", 16)
-    pdf.cell(200, 10, f"Relatorio de Scout: {p1} vs {p2}", ln=True, align="C")
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.cell(190, 10, f"Relatorio de Scout: {p1} vs {p2}", ln=True, align="C")
     pdf.ln(10)
     
-    pdf.set_font("Arial", "B", 10)
-    pdf.set_fill_color(200, 200, 200)
     # Cabeçalho
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.set_fill_color(200, 200, 200)
     cols = ["Vencedor", "Resultado", "Golpe", "Direcao", "Placar"]
-    for col in cols:
-        pdf.cell(38, 10, col, 1, 0, "C", True)
+    widths = [40, 40, 40, 35, 35]
+    
+    for i, col in enumerate(cols):
+        pdf.cell(widths[i], 10, col, 1, 0, "C", True)
     pdf.ln()
     
-    pdf.set_font("Arial", size=9)
+    # Dados
+    pdf.set_font("Helvetica", size=9)
     for row in data:
-        pdf.cell(38, 10, str(row.get("Vencedor", "-")), 1)
-        pdf.cell(38, 10, str(row.get("Resultado", "-")), 1)
-        pdf.cell(38, 10, str(row.get("Golpe", "-")), 1)
-        pdf.cell(38, 10, str(row.get("Direcao", "-")), 1)
-        pdf.cell(38, 10, str(row.get("Score", "-")), 1)
+        pdf.cell(widths[0], 10, str(row.get("Vencedor", "-")), 1)
+        pdf.cell(widths[1], 10, str(row.get("Resultado", "-")), 1)
+        pdf.cell(widths[2], 10, str(row.get("Golpe", "-")), 1)
+        pdf.cell(widths[3], 10, str(row.get("Direcao", "-")), 1)
+        pdf.cell(widths[4], 10, str(row.get("Score", "-")), 1)
         pdf.ln()
-    return pdf.output()
+    
+    # Retorna como bytes puros para o Streamlit
+    return bytes(pdf.output())
 
 # --- INICIALIZAÇÃO DE ESTADOS ---
 if 'match_data' not in st.session_state: st.session_state.match_data = []
@@ -93,7 +98,6 @@ def register_point(winner_name, res, cat="Winner", golpe="Saque", dir_g="N/A", p
         s["p1_pts"], s["p2_pts"] = 0, 0
         st.session_state.setup['server'] = 2 if st.session_state.setup['server'] == 1 else 1
         
-        # Lógica de Fim de Set Único
         g1, g2 = s["p1_gms"], s["p2_gms"]
         if (g1 >= 6 and g1 - g2 >= 2) or g1 == 7 or (g2 >= 6 and g2 - g1 >= 2) or g2 == 7:
             st.session_state.setup["match_over"] = True
@@ -118,7 +122,6 @@ if not st.session_state.setup["active"]:
             st.rerun()
 
 else:
-    # Se o jogo acabou, mostra mensagem mas permite exportar
     if st.session_state.setup["match_over"]:
         st.balloons()
         st.success("PARTIDA FINALIZADA!")
@@ -141,7 +144,6 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-    # Fluxo de Registro (Oculto se match_over=True)
     if not st.session_state.setup["match_over"]:
         if st.session_state.step == "SERVICE":
             st.markdown(f"<div style='text-align: center;'><span class='serve-badge'>{st.session_state.serve_num}º SERVIÇO</span></div>", unsafe_allow_html=True)
@@ -168,7 +170,7 @@ else:
         elif st.session_state.step == "ERR_CAT":
             ce1, ce2 = st.columns(2)
             if ce1.button("🐢 NÃO FORÇADO"): st.session_state.temp_data['cat'] = "Unforced"; st.session_state.step = "WINNER_PICK"; st.rerun()
-            if ce2.button("💥 FORÇADO"): st.session_state.temp_data['cat'] = "Forced"; st.session_state.step = "WINNER_PICK"; st.rerun()
+            if ce2.button("💥 FORÇADO"): st.session_state.temp_color = "Forced"; st.session_state.step = "WINNER_PICK"; st.rerun()
 
         elif st.session_state.step == "WINNER_PICK":
             winner_choice = st.radio("Vencedor:", [p1_n, p2_n], horizontal=True)
@@ -180,20 +182,20 @@ else:
                 register_point(winner_choice, st.session_state.temp_data['res'], st.session_state.temp_data['cat'], golpe_choice, dir_choice, pos_choice)
                 st.rerun()
 
-    # --- RODAPÉ DE AÇÕES PERMANENTE ---
+    # --- RODAPÉ DE AÇÕES ---
     st.divider()
     bot_c1, bot_c2 = st.columns(2)
-    
     with bot_c1:
         if st.button("🔄 UNDO"):
             if st.session_state.match_data: st.session_state.match_data.pop(); st.rerun()
-    
     with bot_c2:
         if st.session_state.match_data:
-            pdf_bytes = generate_pdf(st.session_state.match_data, st.session_state.setup['p1'], st.session_state.setup['p2'])
-            st.download_button("📥 EXPORTAR PDF", data=pdf_bytes, file_name="scout_tenis.pdf", mime="application/pdf")
+            try:
+                report_bytes = generate_pdf(st.session_state.match_data, st.session_state.setup['p1'], st.session_state.setup['p2'])
+                st.download_button(label="📥 EXPORTAR PDF", data=report_bytes, file_name="scout_tenis.pdf", mime="application/pdf")
+            except Exception as e:
+                st.error(f"Erro ao gerar PDF: {e}")
     
     if st.session_state.setup["match_over"]:
         if st.button("🆕 NOVA PARTIDA"):
-            st.session_state.clear()
-            st.rerun()
+            st.session_state.clear(); st.rerun()
