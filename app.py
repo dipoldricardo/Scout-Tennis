@@ -10,7 +10,7 @@ st.set_page_config(
     layout="centered"
 )
 
-# --- ESTILIZAÇÃO CUSTOMIZADA (CSS) ---
+# --- ESTILIZAÇÃO CUSTOMIZADA ---
 st.markdown("""
     <style>
     .stButton>button {
@@ -32,6 +32,7 @@ st.markdown("""
         border-radius: 50px; font-weight: 900; font-size: 16px;
         display: inline-block; margin-bottom: 10px; border: 2px solid #000;
     }
+    .step-title { color: #AAAAAA; text-transform: uppercase; font-size: 12px; text-align: center; margin-bottom: 10px;}
     </style>
     """, unsafe_allow_html=True)
 
@@ -44,18 +45,22 @@ def generate_pdf(data, p1, p2):
     pdf.ln(10)
     pdf.set_font("Helvetica", "B", 10)
     pdf.set_fill_color(200, 200, 200)
-    cols = ["Vencedor", "Resultado", "Golpe", "Direcao", "Placar"]
-    for col in cols: pdf.cell(38, 10, col, 1, 0, "C", True)
+    cols = ["Vencedor", "Resultado", "Golpe", "Posicao", "Direcao", "Placar"]
+    widths = [35, 30, 30, 30, 35, 30]
+    for i, col in enumerate(cols): pdf.cell(widths[i], 10, col, 1, 0, "C", True)
     pdf.ln()
     pdf.set_font("Helvetica", size=9)
     for row in data:
-        for key in cols:
-            val = "Score" if key == "Placar" else key
-            pdf.cell(38, 10, str(row.get(val, "-")), 1)
+        pdf.cell(widths[0], 10, str(row.get("Vencedor", "-")), 1)
+        pdf.cell(widths[1], 10, str(row.get("Resultado", "-")), 1)
+        pdf.cell(widths[2], 10, str(row.get("Golpe", "-")), 1)
+        pdf.cell(widths[3], 10, str(row.get("Posicao", "-")), 1)
+        pdf.cell(widths[4], 10, str(row.get("Direcao", "-")), 1)
+        pdf.cell(widths[5], 10, str(row.get("Score", "-")), 1)
         pdf.ln()
     return bytes(pdf.output())
 
-# --- INICIALIZAÇÃO DE ESTADOS ---
+# --- ESTADOS E LÓGICA ---
 if 'match_data' not in st.session_state: st.session_state.match_data = []
 if 'score' not in st.session_state: st.session_state.score = {"p1_pts": 0, "p2_pts": 0, "p1_gms": 0, "p2_gms": 0}
 if 'setup' not in st.session_state: st.session_state.setup = {"active": False, "p1": "", "p2": "", "server": 1, "match_over": False}
@@ -71,7 +76,7 @@ def format_pts(p1, p2):
     if p1 == p2: return "40", "40"
     return ("AD", "40") if p1 > p2 else ("40", "AD")
 
-def register_point(winner_name, res, cat="Winner", golpe="Saque", dir_g="N/A", pos="N/A"):
+def register_point(winner_name, res, cat="Winner", golpe="Saque", dir_g="N/A", pos="Baseline"):
     s = st.session_state.score
     p1_n, p2_n = st.session_state.setup['p1'], st.session_state.setup['p2']
     if winner_name == p1_n: s["p1_pts"] += 1
@@ -93,7 +98,7 @@ def register_point(winner_name, res, cat="Winner", golpe="Saque", dir_g="N/A", p
     })
     st.session_state.step = "SERVICE"; st.session_state.serve_num = 1; st.session_state.temp_data = {}
 
-# --- INTERFACE PRINCIPAL ---
+# --- INTERFACE ---
 if not st.session_state.setup["active"]:
     st.title("🎾 Scout-Tennis Pro")
     with st.container(border=True):
@@ -104,34 +109,24 @@ if not st.session_state.setup["active"]:
             st.session_state.setup.update({"active": True, "p1": p1_in, "p2": p2_in, "server": 1 if srv_in == p1_in else 2})
             st.rerun()
 else:
-    # --- DASHBOARD (EXPANDER) ---
+    # --- DASHBOARD ---
     with st.expander("📊 DASHBOARD ESTATÍSTICO", expanded=False):
         if st.session_state.match_data:
             df = pd.DataFrame(st.session_state.match_data)
             p1_n, p2_n = st.session_state.setup['p1'], st.session_state.setup['p2']
-            
-            # Métricas Rápidas
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Total de Pontos", len(df))
-            c2.metric(f"Winners {p1_n}", len(df[(df['Vencedor'] == p1_n) & (df['Resultado'] == 'Winner')]))
-            c3.metric(f"Winners {p2_n}", len(df[(df['Vencedor'] == p2_n) & (df['Resultado'] == 'Winner')]))
-            
-            # Gráfico de Distribuição de Golpes
-            fig_golpes = px.pie(df[df['Golpe'] != 'Saque'], names='Golpe', title="Distribuição de Golpes (Rali)", hole=0.4)
-            st.plotly_chart(fig_golpes, use_container_width=True)
-            
-            # Gráfico de Barras: Winners vs Erros por Jogador
-            res_df = df.groupby(['Vencedor', 'Resultado']).size().reset_index(name='count')
-            fig_res = px.bar(res_df, x='Vencedor', y='count', color='Resultado', barmode='group', title="Performance por Atleta")
-            st.plotly_chart(fig_res, use_container_width=True)
-        else:
-            st.info("Aguardando dados para gerar o Dashboard...")
+            c1, c2 = st.columns(2)
+            fig_pos = px.pie(df[df['Golpe'] != 'Saque'], names='Posicao', title="Zonas de Finalização", hole=0.3)
+            c1.plotly_chart(fig_pos, use_container_width=True)
+            fig_golpes = px.bar(df[df['Golpe'] != 'Saque'], x='Golpe', color='Vencedor', barmode='group', title="Eficácia por Golpe")
+            c2.plotly_chart(fig_golpes, use_container_width=True)
+        else: st.info("Aguardando dados...")
 
     # --- PLACAR ---
     s = st.session_state.score
     p1_n, p2_n = st.session_state.setup['p1'], st.session_state.setup['p2']
     srv_idx = st.session_state.setup['server']
     sacador_at = p1_n if srv_idx == 1 else p2_n
+    recebedor_at = p2_n if srv_idx == 1 else p1_n
     pt1, pt2 = format_pts(s["p1_pts"], s["p2_pts"])
     
     st.markdown(f"""
@@ -149,15 +144,17 @@ else:
     if not st.session_state.setup["match_over"]:
         if st.session_state.step == "SERVICE":
             st.markdown(f"<div style='text-align: center;'><span class='serve-badge'>{st.session_state.serve_num}º SERVIÇO</span></div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='step-title'>Sacador: {sacador_at}</div>", unsafe_allow_html=True)
             c1, c2, c3 = st.columns(3)
             if c1.button("WIDE"): st.session_state.temp_data['dir_saque'] = "Wide"; st.session_state.step = "RESULT"; st.rerun()
             if c2.button("BODY"): st.session_state.temp_data['dir_saque'] = "Body"; st.session_state.step = "RESULT"; st.rerun()
             if c3.button("T"): st.session_state.temp_data['dir_saque'] = "T"; st.session_state.step = "RESULT"; st.rerun()
-            if st.button("❌ FALTA"):
+            if st.button("❌ FALTA / NET"):
                 if st.session_state.serve_num == 1: st.session_state.serve_num = 2; st.rerun()
-                else: register_point(p2_n if srv_idx == 1 else p1_n, "Dupla Falta", "Erro"); st.rerun()
+                else: register_point(recebedor_at, "Dupla Falta", "Erro"); st.rerun()
 
         elif st.session_state.step == "RESULT":
+            st.markdown("<div class='step-title'>Desfecho do Ponto</div>", unsafe_allow_html=True)
             cr1, cr2 = st.columns(2)
             if cr1.button("🏆 WINNER", type="primary"): 
                 st.session_state.temp_data['res'] = "Winner"; st.session_state.temp_data['cat'] = "Winner"; st.session_state.step = "WINNER_PICK"; st.rerun()
@@ -168,17 +165,23 @@ else:
             if st.button("🎾 SERVICE WINNER"): register_point(sacador_at, "Service Winner"); st.rerun()
 
         elif st.session_state.step == "ERR_CAT":
+            st.markdown("<div class='step-title'>Origem do Erro</div>", unsafe_allow_html=True)
             ce1, ce2 = st.columns(2)
             if ce1.button("🐢 NÃO FORÇADO"): st.session_state.temp_data['cat'] = "Unforced"; st.session_state.step = "WINNER_PICK"; st.rerun()
             if ce2.button("💥 FORÇADO"): st.session_state.temp_data['cat'] = "Forced"; st.session_state.step = "WINNER_PICK"; st.rerun()
 
         elif st.session_state.step == "WINNER_PICK":
+            st.markdown("<div class='step-title'>Detalhamento Técnico</div>", unsafe_allow_html=True)
             winner_choice = st.radio("Ponto para:", [p1_n, p2_n], horizontal=True)
-            col1, col2 = st.columns(2)
-            golpe_choice = col1.selectbox("Golpe", ["Forehand", "Backhand", "Voleio", "Smash", "Drop Shot"])
-            dir_choice = st.radio("Direção", ["Cruzada", "Paralela"], horizontal=True)
-            if st.button("✅ REGISTRAR"):
-                register_point(winner_choice, st.session_state.temp_data['res'], st.session_state.temp_data['cat'], golpe_choice, dir_choice)
+            
+            c_pos1, c_pos2 = st.columns(2)
+            pos_choice = c_pos1.radio("Zona:", ["Baseline", "Rede"], horizontal=True)
+            golpe_choice = c_pos2.selectbox("Golpe", ["Forehand", "Backhand", "Voleio", "Smash", "Drop Shot"])
+            
+            dir_choice = st.radio("Direção:", ["Cruzada", "Paralela", "N/A"], horizontal=True)
+            
+            if st.button("✅ REGISTRAR PONTO"):
+                register_point(winner_choice, st.session_state.temp_data['res'], st.session_state.temp_data['cat'], golpe_choice, dir_choice, pos_choice)
                 st.rerun()
     else:
         st.success("PARTIDA FINALIZADA!")
